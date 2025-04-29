@@ -3,12 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, Check, ChevronDown } from 'lucide-react';
-import { agencies } from '../data/agencies';
-import { services, additionalOptions } from '../data/services';
+import { agencyService, serviceService, bookingService } from '../services/api';
+import { useToast } from '@/components/ui/use-toast';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const BookingForm: React.FC = () => {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
+  const { toast } = useToast();
   
   const initialServiceId = searchParams.get('service') || 'interior';
   
@@ -32,8 +35,47 @@ const BookingForm: React.FC = () => {
     '14:00', '15:00', '16:00', '17:00'
   ];
   
+  // Fetch data using React Query
+  const { data: agencies, isLoading: isLoadingAgencies } = useQuery({
+    queryKey: ['agencies'],
+    queryFn: agencyService.getAllAgencies,
+    onError: () => {
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les agences",
+        variant: "destructive"
+      });
+    }
+  });
+  
+  const { data: services, isLoading: isLoadingServices } = useQuery({
+    queryKey: ['services'],
+    queryFn: serviceService.getAllServices,
+    onError: () => {
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les services",
+        variant: "destructive"
+      });
+    }
+  });
+  
+  const { data: options, isLoading: isLoadingOptions } = useQuery({
+    queryKey: ['additionalOptions'],
+    queryFn: serviceService.getAdditionalOptions,
+    onError: () => {
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les options supplémentaires",
+        variant: "destructive"
+      });
+    }
+  });
+  
   // Calculate total price whenever selections change
   useEffect(() => {
+    if (!services || !options) return;
+    
     let price = 0;
     
     // Add service price
@@ -44,7 +86,7 @@ const BookingForm: React.FC = () => {
     
     // Add options price
     selectedOptions.forEach(optionId => {
-      const option = additionalOptions.find(o => o.id === optionId);
+      const option = options.find(o => o.id === optionId);
       if (option) {
         price += option.price;
       }
@@ -58,7 +100,7 @@ const BookingForm: React.FC = () => {
     }
     
     setTotalPrice(price);
-  }, [selectedService, selectedOptions, vehicleType]);
+  }, [selectedService, selectedOptions, vehicleType, services, options]);
   
   const handleOptionToggle = (optionId: string) => {
     if (selectedOptions.includes(optionId)) {
@@ -68,27 +110,60 @@ const BookingForm: React.FC = () => {
     }
   };
   
+  // Create booking mutation
+  const createBookingMutation = useMutation({
+    mutationFn: bookingService.createBooking,
+    onSuccess: () => {
+      toast({
+        title: "Réservation confirmée",
+        description: "Votre réservation a été enregistrée avec succès",
+      });
+      // Reset form or redirect
+    },
+    onError: () => {
+      toast({
+        title: "Erreur",
+        description: "Impossible de créer la réservation. Veuillez réessayer.",
+        variant: "destructive"
+      });
+    }
+  });
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Here you would typically send the booking data to an API
-    console.log({
-      agency: selectedAgency,
-      service: selectedService,
-      date: selectedDate,
-      time: selectedTime,
+    
+    const bookingData = {
+      agency_id: parseInt(selectedAgency),
+      user_id: 1, // This would come from authentication in a real app
+      cleaning_type: selectedService,
+      booking_date: `${selectedDate}T${selectedTime}`,
       options: selectedOptions,
       vehicle: {
         make: vehicleMake,
         model: vehicleModel,
-        licensePlate,
+        license_plate: licensePlate,
         type: vehicleType
       },
-      price: totalPrice
-    });
+      total_price: totalPrice,
+      status: 'pending'
+    };
     
-    // Display a confirmation message or redirect
-    alert('Booking submitted successfully! Total: €' + totalPrice);
+    createBookingMutation.mutate(bookingData);
   };
+
+  // Loading state
+  if (isLoadingAgencies || isLoadingServices || isLoadingOptions) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-full mb-4" />
+        <div className="space-y-4">
+          {[1, 2, 3, 4, 5].map(i => (
+            <Skeleton key={i} className="h-32 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -105,7 +180,7 @@ const BookingForm: React.FC = () => {
             <option value="" disabled>
               {t('selectAgency')}
             </option>
-            {agencies.map((agency) => (
+            {agencies?.map((agency) => (
               <option key={agency.id} value={agency.id.toString()}>
                 {agency.city}
               </option>
@@ -119,7 +194,7 @@ const BookingForm: React.FC = () => {
       <div className="space-y-2">
         <label className="block text-lg font-medium">{t('selectService')}</label>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {services.map((service) => (
+          {services?.map((service) => (
             <div
               key={service.id}
               className={`border rounded-lg p-4 cursor-pointer transition-all ${
@@ -185,7 +260,7 @@ const BookingForm: React.FC = () => {
       <div className="space-y-2">
         <label className="block text-lg font-medium">{t('additionalOptions')}</label>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {additionalOptions.map((option) => (
+          {options?.map((option) => (
             <div
               key={option.id}
               className={`border rounded-lg p-4 cursor-pointer transition-all ${
@@ -275,9 +350,10 @@ const BookingForm: React.FC = () => {
       <div className="flex justify-center">
         <button
           type="submit"
-          className="bg-primary hover:bg-primary/90 text-white font-semibold py-3 px-8 rounded-lg shadow transition-colors w-full md:w-auto"
+          className="bg-primary hover:bg-primary/90 text-white font-semibold py-3 px-8 rounded-lg shadow transition-colors w-full md:w-auto disabled:bg-gray-300 disabled:cursor-not-allowed"
+          disabled={createBookingMutation.isPending}
         >
-          {t('payNow')}
+          {createBookingMutation.isPending ? 'Traitement en cours...' : t('payNow')}
         </button>
       </div>
     </form>

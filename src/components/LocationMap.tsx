@@ -1,14 +1,29 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { agencies, Agency } from '../data/agencies';
+import { Agency } from '../data/agencies';
 import { MapPin } from 'lucide-react';
+import { agencyService } from '../services/api';
+import { useQuery } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/use-toast';
 
 const LocationMap: React.FC = () => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [selectedAgency, setSelectedAgency] = useState<Agency | null>(null);
+  const { toast } = useToast();
   
-  // This is a placeholder for Google Maps API integration
-  // In a real implementation, you would use the Google Maps JS SDK
+  // Fetch agencies using React Query
+  const { data: agencies, isLoading, error } = useQuery({
+    queryKey: ['agencies'],
+    queryFn: agencyService.getAllAgencies,
+    onError: () => {
+      toast({
+        title: "Erreur de chargement",
+        description: "Impossible de charger les agences. Veuillez réessayer plus tard.",
+        variant: "destructive"
+      });
+    }
+  });
   
   useEffect(() => {
     // Placeholder for Google Maps initialization
@@ -21,7 +36,7 @@ const LocationMap: React.FC = () => {
     // });
     //
     // Add markers for each agency
-    // agencies.forEach(agency => {
+    // agencies?.forEach(agency => {
     //   const marker = new google.maps.Marker({
     //     position: { lat: agency.lat, lng: agency.lng },
     //     map: map,
@@ -32,7 +47,37 @@ const LocationMap: React.FC = () => {
     //     setSelectedAgency(agency);
     //   });
     // });
-  }, []);
+  }, [agencies]);
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="w-full h-full">
+        <div className="w-full h-[500px] bg-gray-100 rounded-lg overflow-hidden">
+          <Skeleton className="w-full h-full" />
+        </div>
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array(6).fill(null).map((_, index) => (
+            <Skeleton key={index} className="h-28 w-full rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="w-full h-full">
+        <div className="w-full h-[500px] bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+          <div className="text-center px-6 py-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-600 font-semibold">Erreur de chargement des agences</p>
+            <p className="text-gray-600 mt-2">Veuillez actualiser la page ou réessayer plus tard.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full relative">
@@ -56,7 +101,7 @@ const LocationMap: React.FC = () => {
 
       {/* List of agencies */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {agencies.map((agency) => (
+        {agencies?.map((agency) => (
           <div 
             key={agency.id}
             className={`p-4 rounded-lg shadow-md cursor-pointer transition-all 
